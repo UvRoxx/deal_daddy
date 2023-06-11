@@ -1,0 +1,73 @@
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ./deploy/Dockerfile
+      target: prod
+    image: deal_daddy:${DEAL_DADDY_VERSION:-latest}
+    restart: always
+    env_file:
+    - .env
+    labels:
+      # Enables traefik for this container.
+    - traefik.enable=true
+    - traefik.http.routers.deal_daddy.rule=Host(`${DEAL_DADDY_TRAEFIK_HOST:-deal_daddy.localhost}`)
+    - traefik.http.routers.deal_daddy.entrypoints=http
+    - traefik.http.routers.deal_daddy.service=deal_daddy
+    - traefik.http.services.deal_daddy.loadbalancer.server.port=${DEAL_DADDY_PORT:-8000}
+    networks:
+    - default
+    - traefik-shared
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DEAL_DADDY_HOST: 0.0.0.0
+      DEAL_DADDY_DB_HOST: deal_daddy-db
+      DEAL_DADDY_DB_PORT: 5432
+      DEAL_DADDY_DB_USER: deal_daddy
+      DEAL_DADDY_DB_PASS: deal_daddy
+      DEAL_DADDY_DB_BASE: deal_daddy
+
+  db:
+    image: postgres:13.8-bullseye
+    hostname: deal_daddy-db
+    environment:
+      POSTGRES_PASSWORD: "deal_daddy"
+      POSTGRES_USER: "deal_daddy"
+      POSTGRES_DB: "deal_daddy"
+    volumes:
+    - deal_daddy-db-data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: pg_isready -U deal_daddy
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  migrator:
+    image: deal_daddy:${DEAL_DADDY_VERSION:-latest}
+    restart: "no"
+    command: aerich upgrade
+    environment:
+      DEAL_DADDY_DB_HOST: deal_daddy-db
+      DEAL_DADDY_DB_PORT: 5432
+      DEAL_DADDY_DB_USER: deal_daddy
+      DEAL_DADDY_DB_PASS: deal_daddy
+      DEAL_DADDY_DB_BASE: deal_daddy
+    depends_on:
+      db:
+        condition: service_healthy
+
+
+
+volumes:
+  deal_daddy-db-data:
+    name: deal_daddy-db-data
+
+networks:
+  # Network for traefik.
+  traefik-shared:
+    name: traefik-shared
